@@ -7,10 +7,12 @@ import torch
 import open_clip
 from open_clip import tokenizer
 from flask import Flask, request, jsonify
+from flask_cors import CORS
+
 # from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 
 app = Flask(__name__)
-
+CORS(app)
 def setup_app(app):
     # All your initialization code
     print('Initialize Server')
@@ -38,29 +40,69 @@ def setup_app(app):
     #index = faiss.IndexFlatL2(512)
     index = faiss.GpuIndexFlatL2(res, feature_shape, flat_config)
     index.add(image_features)
-    k = 1000
+    k = 100
     #k=20
     
     #For OCR
     f = open("/mmlabworkspace/Students/AIC/ALL_3batch_OCR_Metadata.json")
     data_ocr = json.load(f)
     f.close()
-    return model, index, data_ocr, k, #tokenizer_vn, translate_model
+
+
+    f = open("/mmlabworkspace/Students/AIC/ALL_3batch_metadata.json")
+    data_vbs = json.load(f)
+    f.close()
+
+    return model, index, data_ocr,data_vbs, k, #tokenizer_vn, translate_model
     
 # model, index, data_ocr, k, tokenizer_vn, translate_model = setup_app(app)
-model, index, data_ocr, k, = setup_app(app)
+model, index, data_ocr,data_vbs, k, = setup_app(app)
 
-# def translateVi2En(input_sentence):
-#   return tokenizer_vn.batch_decode(translate_model.generate(tokenizer_vn(input_sentence, return_tensors="pt", padding=True).input_ids.cuda(), max_length=128), skip_special_tokens=True)[0][3:]
-  
+
+
+def load_image(id, mode):
+    # assume id is string (int) type
+    if mode == "caption":
+        id = str(int(id) + 1)
+        # keyframe_name = data_vbs[id]["keyframe_name"]
+        # video_name = data_vbs[id]["video_id"]
+        # image_name = data_vbs[id]["image_name"]
+        # if int(id) - 1 < 226636:
+        if len(data_vbs[id])==3:
+            image_path = '/mmlabworkspace/Students/AIC/3Batch_KeyFrames/'+data_vbs[id]['keyframe_id']+'/'+ data_vbs[id]['video_id'] +'/'+ data_vbs[id]['image_name']
+        else:
+        # except:
+            image_path = '/mmlabworkspace/Students/AIC/Data_Batch3/KeyFrame_extractByCV/' + data_vbs[id]['video_id'] +'/' + data_vbs[id]['image_name']
+    elif mode == "ocr":
+        video_name = data_ocr[id]["video_name"]
+        image_name = data_ocr[id]["image_name"]
+        # image_path = "/mmlabworkspace/Students/AIC/3Batch_KeyFrames/" + video_name[:6] + "/" + video_name
+        image_path = "/mmlabworkspace/Students/AIC/Data_Batch3/KeyFrame_extractByCV/" + video_name + "/"+ image_name
+    return image_path
+    
+
+    # image_folder = '/home/tuanld/AIC/Data_Batch1/KeyFrame/' + \
+    #     keyframe_name+'/' + video_name
+    # image_path = ('/home/tuanld/AIC/Data_Batch1/KeyFrame/' +
+    #               data_vbs[id]['keyframe_name']+'/' + data_vbs[id]['video_id'] + '/' + data_vbs[id]['image_name'])
+   
+
+def get_timecode(frame_id, fps):
+    timecode = (int(frame_id) / fps)
+    return int(timecode)
+
+
+
+
 @app.route("/process", methods = ["POST","GET"])
 def result():
   # query_input = request.data  # OCR input
-  query = request.json["query"]
+  res = json.loads(request.data.decode("utf-8"))
+  query = res.get("query")
   # query = translateVi2En(query)
   print(query)
 
-  mode = request.json["mode"]
+  mode = res.get("mode")
   mode_ocr = "visual"
   score = 0.85
   
@@ -105,8 +147,17 @@ def result():
     
     I = I.tolist()
     I = I[0]
-    print("I", I)
-    return json.dumps(I)
+    # print("I", I)
+
+  payload=[]
+  for i,ind in enumerate(I):
+    image_path = load_image(ind, mode)
+    payload.append({"image_path":image_path})
+
+  # res = json.dumps(payload)
+  # print(jsonify(res))
+  
+  return jsonify(payload)
 
 
 # @app.route("/process_FAISS", methods = ["POST","GET"])
