@@ -53,11 +53,48 @@ def setup_app(app):
     data_vbs = json.load(f)
     f.close()
 
-    return model, index, data_ocr,data_vbs, k, #tokenizer_vn, translate_model
+    f = open('/mmlabworkspace/Students/AIC/Data_Batch3/keyframe_p_batch3/keyframe_p/result_batch1_2_3.json', 'r')
+    frame_id_mapping = json.load(f)
+    f.close()
+
+    return model, index, data_ocr,data_vbs, k, frame_id_mapping #tokenizer_vn, translate_model
     
 # model, index, data_ocr, k, tokenizer_vn, translate_model = setup_app(app)
-model, index, data_ocr,data_vbs, k, = setup_app(app)
+model, index, data_ocr, data_vbs, k, frame_id_mapping = setup_app(app)
 
+
+def load_video(id,mode):
+  # assume id is string (int) type
+    id = str(int(id) + 1)
+ 
+    #   keyframe_name = data_vbs[id]["keyframe_name"]
+    video_name = data_vbs[id]["video_id"]
+  #   image_name = data_vbs[id]["image_name"]
+    try:
+      f = open('/mmlabworkspace/Students/AIC/metadata/'+  "Metadata_"+video_name[0:7]+"/" + video_name+".json")
+      data = json.load(f)
+      url = data["watch_url"]
+    except:
+      url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    return url
+
+
+    # if mode == "caption":
+    #     id = str(int(id) + 1)
+    # #   keyframe_name = data_vbs[id]["keyframe_name"]
+    #     video_name = data_vbs[id]["video_id"]
+    # #   image_name = data_vbs[id]["image_name"]
+    #     prefix, postfix = video_name.split('_')
+    #     if int(postfix[1:]) < 100:
+    #         video_path = "/mmlabworkspace/Students/AIC/Data_Batch1/Video/" + \
+    #             "Video" + prefix + "_V00/" + video_name + ".mp4"
+    #     elif int(postfix[1:])>=100 and int(postfix[1:])<=199:
+    #         video_path = "/mmlabworkspace/Students/AIC/Data_Batch2/Video/" + \
+    #             "Video" + prefix + "_V01/" + video_name + ".mp4"
+    #     else:
+    #         video_path = "/mmlabworkspace/Students/AIC/Data_Batch3/Video" + \
+    #             video_name[:-2] + "/" + video_name+ ".mp4"
+        
 
 
 def load_image(id, mode):
@@ -69,15 +106,15 @@ def load_image(id, mode):
         # image_name = data_vbs[id]["image_name"]
         # if int(id) - 1 < 226636:
         if len(data_vbs[id])==3:
-            image_path = '/mmlabworkspace/Students/AIC/3Batch_KeyFrames/'+data_vbs[id]['keyframe_id']+'/'+ data_vbs[id]['video_id'] +'/'+ data_vbs[id]['image_name']
+            image_path = '/3Batch_KeyFrames/'+data_vbs[id]['keyframe_id']+'/'+ data_vbs[id]['video_id'] +'/'+ data_vbs[id]['image_name']
         else:
         # except:
-            image_path = '/mmlabworkspace/Students/AIC/Data_Batch3/KeyFrame_extractByCV/' + data_vbs[id]['video_id'] +'/' + data_vbs[id]['image_name']
+            image_path = '/Data_Batch3/KeyFrame_extractByCV/' + data_vbs[id]['video_id'] +'/' + data_vbs[id]['image_name']
     elif mode == "ocr":
         video_name = data_ocr[id]["video_name"]
         image_name = data_ocr[id]["image_name"]
         # image_path = "/mmlabworkspace/Students/AIC/3Batch_KeyFrames/" + video_name[:6] + "/" + video_name
-        image_path = "/mmlabworkspace/Students/AIC/Data_Batch3/KeyFrame_extractByCV/" + video_name + "/"+ image_name
+        image_path = "/Data_Batch3/KeyFrame_extractByCV/" + video_name + "/"+ image_name
     return image_path
     
 
@@ -109,20 +146,27 @@ def result():
   if mode == "ocr":
     indeces = []
     query = query.split('&')
+    print('after split: ',query)
     for i in data_ocr:
       true_q = 0
       for j in data_ocr[i]['words']:    
           for num_q in query:
               #if this is visual mode, we have to check whether the query is greater than score or not
               if mode_ocr == "visual":
+                  #print("visual")
                   if num_q[0] == '"':
                       num_q = num_q[1:-1]
                       #if (Levenshtein.ratio(num_q, j)) == 1:
-                      if num_q == j: 
+                      if num_q == j.lower(): 
                           true_q += 1
                   else:
-                      if ((Levenshtein.ratio(num_q, j)) >= score) or ( num_q in j):
+                      #print("not 100%")
+                      if ((Levenshtein.ratio(num_q, j.lower())) >= score) or ( num_q in j.lower()):
                           true_q += 1
+                          #print("added")
+              #break
+          #break
+    
               
               # if this is textual mode, we just check whether query is in description or not
               # elif mode_ocr == "textual":
@@ -133,8 +177,17 @@ def result():
       # In the textual mode case, if true_q >= len(query), it means that the query in the description equal or more than len(query) times
       if true_q >= len(query):    
           indeces.append(i)
+      #break
+    
           
-    return json.dumps(indeces)
+    # return json.dumps(indeces)
+    payload=[]
+    for ind in indeces:
+      image_path = load_image(ind, mode)
+      url = load_video(ind,mode)
+      id_video = url.split('=')[1]
+      payload.append({"image_path":image_path,
+                      "id_video":id_video})
   
   elif mode == "caption":
     text_tokens = tokenizer.tokenize([query])
@@ -149,10 +202,13 @@ def result():
     I = I[0]
     # print("I", I)
 
-  payload=[]
-  for i,ind in enumerate(I):
-    image_path = load_image(ind, mode)
-    payload.append({"image_path":image_path})
+    payload=[]
+    for ind in I:
+      image_path = load_image(ind, mode)
+      url = load_video(ind,mode)
+      id_video = url.split('=')[1]
+      payload.append({"image_path":image_path,
+                      "id_video":id_video})
 
   # res = json.dumps(payload)
   # print(jsonify(res))
@@ -172,5 +228,5 @@ def result():
 #     return resp 
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", debug=False, port=2021,threaded=True)
+    app.run(host="0.0.0.0", debug=True, port=2021,threaded=True)
     # print("here")
